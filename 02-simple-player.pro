@@ -3,7 +3,10 @@ CONFIG += console c++11
 CONFIG -= app_bundle
 CONFIG -= qt
 
-SOURCES += main.cpp
+SOURCES += main.cpp \
+    log.cpp \
+    packet_queue.cpp \
+    util_time.cpp
 
 win32 {
 INCLUDEPATH += $$PWD/ffmpeg-4.0.2-win32-dev/include
@@ -20,4 +23,7 @@ LIBS += $$PWD/ffmpeg-4.0.2-win32-dev/lib/avformat.lib   \
         $$PWD/SDL2/lib/x86/SDL2.lib
 }
 
-HEADERS +=
+HEADERS += \
+    log.h \
+    packet_queue.h \
+    util_time.h
