@@ -1,19 +1,8 @@
 /**********************************************
- * Date:  2018年10月12日
- * Description: 简单视频播放器 v0.1
+ * Date:  2019年2月13日
+ * Description: 简单视频播放器 v1.0
  *
  **********************************************/
-/************************************************
- * @file main.c
- * @brief 简单视频播放器 v0.1
- * @details v0.1 仅是支持视频播放，视频刷新在主函数进行
- * @mainpage 工程概览
- * @author Liao Qingfu
- * @email 592407834@qq.com
- * @version 0.1
- * @date 2018-10-12
- ***********************************************/
-
 
 #ifdef __cplusplus
 extern "C"
@@ -72,7 +61,6 @@ typedef struct VideoState
 // Since we only have one decoding thread, the Big Struct can be global in case we need it.
 VideoState *global_video_state = NULL;
 
-
 // SDL 这部分主要是显示相关，
 static int default_width  = 640;
 static int default_height = 480;
@@ -85,7 +73,6 @@ static SDL_Rect     sdlRect;
 
 // 包队列数据缓存控制
 #define MAX_QUEUE_SIZE (1 * 1024 * 1024)
-
 
 const char *s_picture_type[] =
 {
