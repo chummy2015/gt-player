@@ -2,8 +2,10 @@
 
 ### 2019-2-13(v1.0)
 简单视频播放器（直接解码sdl渲染播放）  
-https://blog.csdn.net/FlayHigherGT/article/details/85690386  
-pFormatCtx = avformat_alloc_context();                                             
+https://blog.csdn.net/FlayHigherGT/article/details/85690386
+
+#### 流程解析
+pFormatCtx = avformat_alloc_context();                                             
 首先给上下文分配内存  
 
 ret = avformat_open_input(&pFormatCtx, filePath, NULL, NULL);   
