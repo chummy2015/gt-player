@@ -116,10 +116,71 @@ static char* av_get_err(int errnum)
     return err_buf;
 }
 
+static int stream_component_open(VideoState *is, int stream_index)
+{
+    int ret;
+    AVCodecContext *avctx;
+    AVCodec *codec;
+    int sample_rate, nb_channels;
+    int64_t channel_layout;
+
+    // 分配解码器上下文内存，使用avcodec_free_context来释放
+    avctx = avcodec_alloc_context3(NULL);
+    if(!avctx)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error] avcodec_alloc_context3: %s", av_get_err(ret));
+        goto failed;
+    }
+    // 将码流中的编解码器信息AVCodecParameters拷贝到AVCodecContex
+    ret = avcodec_parameters_to_context(avctx, is->ic->streams[stream_index]->codecpar);
+    if(ret < 0)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error] avcodec_parameters_to_context: %s", av_get_err(ret));
+        goto failed;
+    }
+    // 查找解码器
+    codec = avcodec_find_decoder(avctx->codec_id);
+    if(codec == NULL)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error] Video Codec not found");
+        goto failed;
+    }
+    // 打开解码器
+    ret = avcodec_open2(avctx, codec, NULL);
+    if(ret < 0)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error]avcodec_open2 failed: %s", av_get_err(ret));
+        goto failed;
+    }
+    switch (avctx->codec_type)
+    {
+    case AVMEDIA_TYPE_AUDIO:
+//        sample_rate    = avctx->sample_rate;//采样率
+//        nb_channels    = avctx->channels;//通道数
+//        channel_layout = avctx->channel_layout;//通道布局
+//        is->aud_codec_ctx = avctx;
+//        is->audio_tgt = (AudioParams *)av_mallocz(sizeof(AudioParams));
+//        is->audio_src = (AudioParams *)av_mallocz(sizeof(AudioParams));
+//        is->audio_buf_index = 0;
+//        if ((ret = audio_open(is, channel_layout, nb_channels, sample_rate, is->audio_tgt)) < 0)
+//            goto failed;
+//        *(is->audio_src) = *(is->audio_tgt);
+//        break;
+    case AVMEDIA_TYPE_VIDEO:
+        is->vid_codec_ctx = avctx;
+        is->frame_rate = is->vstream->avg_frame_rate.num / is->vstream->avg_frame_rate.den;
+        screen_width = is->vid_codec_ctx->width;
+        screen_height = is->vid_codec_ctx->height;
+        break;
+    }
+    return 0;
+failed:
+    return -1;
+}
+
 static int read_thread(void *arg)
 {
     VideoState		*is	= (VideoState *) arg;
-    AVCodec         *pcodec;
     AVPacket        *packet;
     int             ret;
 
@@ -157,38 +218,13 @@ static int read_thread(void *arg)
         goto failed;
     }
     is->vstream =  is->ic->streams[is->videoindex];
-    is->frame_rate = is->vstream->avg_frame_rate.num / is->vstream->avg_frame_rate.den;
 
-    // 分配解码器上下文内存，使用avcodec_free_context来释放
-    is->vid_codec_ctx = avcodec_alloc_context3(NULL);
-    if(!is->vid_codec_ctx)
+    // 视频解码器
+    if(stream_component_open(is, is->videoindex) < 0)
     {
-        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error] avcodec_alloc_context3: %s", av_get_err(ret));
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "stream_component_open video failed");
         goto failed;
     }
-    // 将码流中的编解码器信息AVCodecParameters拷贝到AVCodecContex
-    ret = avcodec_parameters_to_context(is->vid_codec_ctx, is->ic->streams[is->videoindex]->codecpar);
-    if(ret < 0)
-    {
-        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error] avcodec_parameters_to_context: %s", av_get_err(ret));
-        goto failed;
-    }
-    // 查找解码器
-    pcodec = avcodec_find_decoder(is->vid_codec_ctx->codec_id);
-    if(pcodec == NULL)
-    {
-        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error] Video Codec not found");
-        goto failed;
-    }
-    // 打开解码器
-    ret = avcodec_open2(is->vid_codec_ctx, pcodec, NULL);
-    if(ret < 0)
-    {
-        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "[error]avcodec_open2 failed: %s", av_get_err(ret));
-        goto failed;
-    }
-    screen_width = is->vid_codec_ctx->width;
-    screen_height = is->vid_codec_ctx->height;
 
     // 输出文件信息
     LOG_DEBUG(DEBUG_PLAYER | DBG_TRACE,"-------------File Information-------------\n");
@@ -400,7 +436,7 @@ int main(int argc, char *argv[])
 
     if(argc != 2)
     {
-        strcpy(is->filename, "source.200kbps.768x320.flv"); // 默认打开文件
+        strcpy(is->filename, "10s.flv"); // 默认打开文件
     }
     else
         strcpy(is->filename, argv[1]);
