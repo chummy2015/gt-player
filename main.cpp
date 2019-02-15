@@ -32,11 +32,8 @@ extern "C"
 #include "util_time.h"
 #include "video_state.h"
 
-
-
 // Since we only have one decoding thread, the Big Struct can be global in case we need it.
 VideoState *global_video_state = NULL;
-
 
 // SDL 这部分主要是显示相关，
 static int default_width  = 640;
@@ -50,7 +47,6 @@ static SDL_Rect     sdlRect;
 
 // 包队列数据缓存控制
 #define MAX_QUEUE_SIZE (512 * 1024)
-
 
 const char *s_picture_type[] =
 {
@@ -78,7 +74,7 @@ static int frame_refresh_thread(void *arg)
             SDL_PushEvent(&event);
         }
         if(is->frame_rate > 0)
-            SDL_Delay(1000/is->frame_rate/2);     // 这里控制播放速度，有时候因为调试所以使用了倍速。
+            SDL_Delay(1000/is->frame_rate);     // 这里控制播放速度，有时候因为调试所以使用了倍速。
         else
             SDL_Delay(40);
     }
@@ -258,11 +254,11 @@ static int read_thread(void *arg)
         }
 
         // Is this a packet from the video stream?.
-        /*if (packet->stream_index == is->videoindex)
+        if (packet->stream_index == is->videoindex)
         {
             packet_queue_put(is->videoq, packet);
         }
-        else */if (packet->stream_index == is->audioindex)
+        else if (packet->stream_index == is->audioindex)
         {
             packet_queue_put(is->audioq, packet);
         }
@@ -390,11 +386,11 @@ int main(int argc, char *argv[])
     }
 
     // 初始化显示界面
-//    if(display_init() < 0)
-//    {
-//        LOG_DEBUG(DEBUG_PLAYER | DBG_HALT, "display_init failed");
-//        return -1;
-//    }
+    if(display_init() < 0)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_HALT, "display_init failed");
+        return -1;
+    }
     is->videoq = packet_queue_init();
     is->audioq = packet_queue_init();
     if(!is->videoq || !is->audioq)
