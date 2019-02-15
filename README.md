@@ -9,7 +9,7 @@ https://blog.csdn.net/leixiaohua1020/article/details/40544521
 简单视频播放器（直接解码sdl渲染播放）  
 https://blog.csdn.net/FlayHigherGT/article/details/85690386
 
-## 基本流程解析：
+#### 基本流程解析：
 pFormatCtx = avformat_alloc_context();                                             
 首先给上下文分配内存  
 
