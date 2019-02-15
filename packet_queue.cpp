@@ -2,11 +2,16 @@
 #include "log.h"
 #include "util_time.h"
 
-void packet_queue_init(PacketQueue *q)
+PacketQueue *packet_queue_init(void)
 {
-    memset(q, 0, sizeof(PacketQueue));
+    PacketQueue *q = (PacketQueue *)av_mallocz(sizeof(PacketQueue));
+    if(!q)
+    {
+        return NULL;
+    }
     q->mutex = SDL_CreateMutex();
     q->cond = SDL_CreateCond();
+    return q;
 }
 static int packet_queue_put_private(PacketQueue *q, AVPacket *pkt)
 {
@@ -106,13 +111,22 @@ int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block)
 void packet_queue_flush(PacketQueue *q)
 {
     AVPacketList *pkt, *pkt1;
+    int npackets = q->nb_packets;
 
     SDL_LockMutex(q->mutex);
     for (pkt = q->first_pkt; pkt != NULL; pkt = pkt1)
     {
         pkt1 = pkt->next;
-        av_packet_unref(&pkt->pkt);
+//        printf("pos = %d\n", pkt->pkt.pos);
+        if(pkt->pkt.buf)
+            av_packet_unref(&pkt->pkt);
+//        printf("av_packet_unref\n");
         av_freep(&pkt);
+//        printf("av_freep %d\n", --npackets);
+        if(npackets == 1)
+        {
+            printf("av_freep ֻʣ%d\n", npackets);
+        }
     }
     q->last_pkt = NULL;
     q->first_pkt = NULL;
@@ -140,4 +154,11 @@ void packet_queue_abort(PacketQueue *q)
     SDL_CondSignal(q->cond);
 
     SDL_UnlockMutex(q->mutex);
+}
+
+void packet_queue_destroy(PacketQueue **q)
+{
+    packet_queue_flush(*q);
+    av_free(*q);
+    *q = NULL;
 }

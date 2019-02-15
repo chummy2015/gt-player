@@ -33,6 +33,7 @@
 #define DEBUG_PLAYER                    DBG_ON      //播放器
 #define DEBUG_AVSYNC                    DBG_ON      //音视频同步模块
 #define DEBUG_VIDEO_DECODE              DBG_ON      //视频解码模块
+#define DEBUG_AUDIO_DECODE              DBG_OFF      //视频解码模块
 #define DEBUG_PLAYER_QUIT               DBG_ON      //播放器退出时间
 
 //总是满足LOG_DEBUG()的输出条件，不受DBG_ON/DBG_OFF影响

@@ -1,6 +1,9 @@
 #ifndef PACKET_QUEUE_H
 #define PACKET_QUEUE_H
 
+
+
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -19,7 +22,7 @@ typedef struct PacketQueue
     int abort_request;          // 是否退出等待
 } PacketQueue;
 
-void packet_queue_init(PacketQueue *q);
+PacketQueue *packet_queue_init(void);
 int packet_queue_put(PacketQueue *q, AVPacket *pkt);
 /**
  * @brief 获取数据包
@@ -35,5 +38,5 @@ int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block);
 void packet_queue_flush(PacketQueue *q);
 int packet_queue_put_nullpacket(PacketQueue *q, int stream_index);
 void packet_queue_abort(PacketQueue *q);
-
+void packet_queue_destroy(PacketQueue **q);
 #endif // PACKET_QUEUE_H

@@ -1,8 +1,19 @@
 /**********************************************
- * Date:  2019年2月13日
- * Description: 简单视频播放器 v1.0
+ * Date:  2018年10月12日
+ * Description: 简单视频播放器 v0.1
  *
  **********************************************/
+/************************************************
+ * @file main.c
+ * @brief 简单视频播放器 v0.1
+ * @details v0.1 仅是支持视频播放，视频刷新在主函数进行
+ * @mainpage 工程概览
+ * @author Liao Qingfu
+ * @email 592407834@qq.com
+ * @version 0.1
+ * @date 2018-10-12
+ ***********************************************/
+
 
 #ifdef __cplusplus
 extern "C"
@@ -15,51 +26,17 @@ extern "C"
 #include "libavutil/time.h"
 }
 #endif
-
+#include "audio_output.h"
 #include "log.h"
 #include "packet_queue.h"
 #include "util_time.h"
+#include "video_state.h"
 
 
-typedef struct VideoState
-{
-    AVFormatContext *ic;
-    int		abort_request;      // =1时请求退出播放
-
-    // 视频相关
-    AVStream    *video_st;
-    PacketQueue videoq;
-    int         videoindex;
-    AVCodecContext  *vid_codec_ctx;
-    AVStream    *vstream;
-    int         frame_rate;     // 帧率
-
-    // 音频相关
-    AVStream    *audio_st;
-    PacketQueue audioq;
-    int         audioindex;
-    AVCodecContext  *aud_codec_ctx;
-    AVStream    *astream;
-    int         sample_rate;     // 采样率
-
-    // 显示相关
-    int	width, height, xleft, ytop;
-    bool is_display_open;
-
-    // 文件相关
-    char filename[1024];
-    bool eof;        // 是否已经读取结束
-
-    SDL_Thread   *refresh_tid;
-    SDL_Thread   *read_tid;
-
-    // 控制相关
-    bool quit;       // = ture时程序退出
-    bool pause;      // = ture暂停
-} VideoState;
 
 // Since we only have one decoding thread, the Big Struct can be global in case we need it.
 VideoState *global_video_state = NULL;
+
 
 // SDL 这部分主要是显示相关，
 static int default_width  = 640;
@@ -72,7 +49,8 @@ static SDL_Texture  *vid_texture = NULL;
 static SDL_Rect     sdlRect;
 
 // 包队列数据缓存控制
-#define MAX_QUEUE_SIZE (1 * 1024 * 1024)
+#define MAX_QUEUE_SIZE (512 * 1024)
+
 
 const char *s_picture_type[] =
 {
@@ -100,7 +78,7 @@ static int frame_refresh_thread(void *arg)
             SDL_PushEvent(&event);
         }
         if(is->frame_rate > 0)
-            SDL_Delay(1000/is->frame_rate);     // 这里控制播放速度，有时候因为调试所以使用了倍速。
+            SDL_Delay(1000/is->frame_rate/2);     // 这里控制播放速度，有时候因为调试所以使用了倍速。
         else
             SDL_Delay(40);
     }
@@ -155,17 +133,17 @@ static int stream_component_open(VideoState *is, int stream_index)
     switch (avctx->codec_type)
     {
     case AVMEDIA_TYPE_AUDIO:
-//        sample_rate    = avctx->sample_rate;//采样率
-//        nb_channels    = avctx->channels;//通道数
-//        channel_layout = avctx->channel_layout;//通道布局
-//        is->aud_codec_ctx = avctx;
-//        is->audio_tgt = (AudioParams *)av_mallocz(sizeof(AudioParams));
-//        is->audio_src = (AudioParams *)av_mallocz(sizeof(AudioParams));
-//        is->audio_buf_index = 0;
-//        if ((ret = audio_open(is, channel_layout, nb_channels, sample_rate, is->audio_tgt)) < 0)
-//            goto failed;
-//        *(is->audio_src) = *(is->audio_tgt);
-//        break;
+        sample_rate    = avctx->sample_rate;//采样率
+        nb_channels    = avctx->channels;//通道数
+        channel_layout = avctx->channel_layout;//通道布局
+        is->aud_codec_ctx = avctx;
+        is->audio_tgt = (AudioParams *)av_mallocz(sizeof(AudioParams));
+        is->audio_src = (AudioParams *)av_mallocz(sizeof(AudioParams));
+        is->audio_buf_index = 0;
+        if ((ret = audio_open(is, channel_layout, nb_channels, sample_rate, is->audio_tgt)) < 0)
+            goto failed;
+        *(is->audio_src) = *(is->audio_tgt);
+        break;
     case AVMEDIA_TYPE_VIDEO:
         is->vid_codec_ctx = avctx;
         is->frame_rate = is->vstream->avg_frame_rate.num / is->vstream->avg_frame_rate.den;
@@ -181,6 +159,7 @@ failed:
 static int read_thread(void *arg)
 {
     VideoState		*is	= (VideoState *) arg;
+    AVCodec         *pcodec;
     AVPacket        *packet;
     int             ret;
 
@@ -219,12 +198,28 @@ static int read_thread(void *arg)
     }
     is->vstream =  is->ic->streams[is->videoindex];
 
+
+    is->audioindex = av_find_best_stream(is->ic, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
+    if(is->audioindex == -1)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "Didn't find a audio stream");
+        goto failed;
+    }
+
     // 视频解码器
     if(stream_component_open(is, is->videoindex) < 0)
     {
         LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "stream_component_open video failed");
         goto failed;
     }
+
+    // 音频解码器
+    if(stream_component_open(is, is->audioindex) < 0)
+    {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_ERROR, "stream_component_open video failed");
+        goto failed;
+    }
+
 
     // 输出文件信息
     LOG_DEBUG(DEBUG_PLAYER | DBG_TRACE,"-------------File Information-------------\n");
@@ -240,10 +235,10 @@ static int read_thread(void *arg)
         if (is->abort_request)
         {
             LOG_DEBUG(DEBUG_PLAYER_QUIT | DBG_STATE, "quit, size = %d",
-                      is->audioq.size + is->videoq.size);
+                      is->audioq->size + is->videoq->size);
             break;
         }
-        if(is->audioq.size + is->videoq.size > MAX_QUEUE_SIZE)
+        if(is->audioq->size + is->videoq->size > MAX_QUEUE_SIZE)
         {
             av_usleep(10*1000);
             continue;
@@ -254,8 +249,8 @@ static int read_thread(void *arg)
             if ((ret == AVERROR_EOF || avio_feof(is->ic->pb)) && !is->eof)
             {
                 LOG_DEBUG(DEBUG_VIDEO_DECODE | DBG_STATE, "push null packet");
-                packet_queue_put_nullpacket(&is->videoq, is->videoindex);
-                packet_queue_put_nullpacket(&is->audioq, is->audioindex);
+                packet_queue_put_nullpacket(is->videoq, is->videoindex);
+                packet_queue_put_nullpacket(is->audioq, is->audioindex);
                 is->eof = true;            // 文件读取结束
             }
             av_usleep(10*1000);
@@ -263,14 +258,14 @@ static int read_thread(void *arg)
         }
 
         // Is this a packet from the video stream?.
-        if (packet->stream_index == is->videoindex)
+        /*if (packet->stream_index == is->videoindex)
         {
-            packet_queue_put(&is->videoq, packet);
+            packet_queue_put(is->videoq, packet);
         }
-        //        else if (packet->stream_index == is->audioindex)
-        //        {
-        //            packet_queue_put(&is->audioq, packet);
-        //        }
+        else */if (packet->stream_index == is->audioindex)
+        {
+            packet_queue_put(is->audioq, packet);
+        }
         else
         {
             av_packet_unref(packet);
@@ -296,6 +291,7 @@ release:
  */
 int display_init(void)
 {
+
     window = SDL_CreateWindow("Simple Player", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
                               default_width, default_height, SDL_WINDOW_RESIZABLE);  //SDL_WINDOW_OPENGL
     if(!window)
@@ -369,34 +365,6 @@ void display_frame(AVFrame *frame)
     SDL_RenderPresent(renderer);
 }
 
-// 只是用来测试解码后的数据是否正常
-void save_yuv(FILE *file, AVFrame *frame)
-{
-    int height = frame->height;
-    int width = frame->width;
-
-    char* buf = new char[width * height * 3 / 2];
-    memset(buf, 0, height * width * 3 / 2);
-
-    int a = 0, i;
-    for (i = 0; i<height; i++)
-    {
-        memcpy(buf + a, frame->data[0] + i * frame->linesize[0], width);
-        a += width;
-    }
-    for (i = 0; i<height / 2; i++)
-    {
-        memcpy(buf + a, frame->data[1] + i * frame->linesize[1], width / 2);
-        a += width / 2;
-    }
-    for (i = 0; i<height / 2; i++)
-    {
-        memcpy(buf + a, frame->data[2] + i * frame->linesize[2], width / 2);
-        a += width / 2;
-    }
-    fwrite(buf, 1, width * height * 3 / 2, file);
-}
-
 #undef main
 int main(int argc, char *argv[])
 {
@@ -414,29 +382,30 @@ int main(int argc, char *argv[])
     }
     global_video_state = is;
 
-    FILE *yuv_file = fopen("yuv_file.yuv","wb+");
-    if (!yuv_file)
-    {
-        return 0;
-    }
     // SDL初始化
-    if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER) < 0)
+    if(SDL_Init(SDL_INIT_VIDEO  | SDL_INIT_TIMER) < 0)
     {
         LOG_DEBUG(DEBUG_PLAYER | DBG_HALT, "Could not initialize SDL - %s\n", SDL_GetError());
         return -1;
     }
 
     // 初始化显示界面
-    if(display_init() < 0)
+//    if(display_init() < 0)
+//    {
+//        LOG_DEBUG(DEBUG_PLAYER | DBG_HALT, "display_init failed");
+//        return -1;
+//    }
+    is->videoq = packet_queue_init();
+    is->audioq = packet_queue_init();
+    if(!is->videoq || !is->audioq)
     {
+        LOG_DEBUG(DEBUG_PLAYER | DBG_HALT, "packet_queue_init failed");
         return -1;
     }
-    packet_queue_init(&is->videoq);
-    packet_queue_init(&is->audioq);
 
     if(argc != 2)
     {
-        strcpy(is->filename, "10s.flv"); // 默认打开文件
+        strcpy(is->filename, "source.200kbps.768x320.flv"); // 默认打开文件
     }
     else
         strcpy(is->filename, argv[1]);
@@ -468,7 +437,7 @@ int main(int argc, char *argv[])
             break;
 
         case FRAME_REFRESH_EVENT:
-            ret = packet_queue_get(&is->videoq, packet, 1);
+            ret = packet_queue_get(is->videoq, packet, 1);
             if(ret  < 0)
             {
                 is->quit = true;
@@ -481,14 +450,6 @@ int main(int argc, char *argv[])
             else if(ret == 1)           // 有数据
             {
                 // 发送要解码的数据
-                if(!packet->buf)
-                {
-                    LOG_DEBUG(DEBUG_VIDEO_DECODE | DBG_STATE, "flush null packet");
-                    LOG_DEBUG(DEBUG_PLAYER_QUIT | DBG_STATE, " size = %d",
-                              is->videoq.size);
-
-                }
-
                 ret = avcodec_send_packet(is->vid_codec_ctx, packet);
                 if( ret != 0 )
                 {
@@ -513,8 +474,6 @@ int main(int argc, char *argv[])
 //                    LOG_DEBUG(DEBUG_VIDEO_DECODE | DBG_STATE, "frame[%d] type = %s\n",
 //                              ++s_frame_count, s_picture_type[frame->pict_type]);
                     display_frame(frame);      // 显示
-
-                    //save_yuv(yuv_file, frame);
                 }
                 else if(ret == AVERROR(EAGAIN))
                 {
@@ -545,19 +504,21 @@ int main(int argc, char *argv[])
             break;
         }
     }
-
+    audio_stop();
     // 请求结束 read_thread
-    packet_queue_abort(&is->videoq);
-    packet_queue_abort(&is->audioq);
+    packet_queue_abort(is->videoq);
+    packet_queue_abort(is->audioq);
     is->abort_request = 1;
     LOG_DEBUG(DEBUG_PLAYER | DBG_STATE, "SDL_WaitThread(is->refresh_tid, NULL);");
     SDL_WaitThread(is->refresh_tid, NULL);
     LOG_DEBUG(DEBUG_PLAYER | DBG_STATE, "SDL_WaitThread(is->read_tid, NULL);");
     SDL_WaitThread(is->read_tid, NULL);
 
-    LOG_DEBUG(DEBUG_PLAYER | DBG_STATE, "packet_queue_flush");
-    packet_queue_flush(&is->videoq);
-    packet_queue_flush(&is->audioq);
+    LOG_DEBUG(DEBUG_PLAYER | DBG_STATE, "packet_queue_destroy");
+    if(is->audioq)
+    packet_queue_destroy(&is->audioq);  // 注意音频队列 回调函数
+    if(is->videoq)
+    packet_queue_destroy(&is->videoq);
 
     if(vid_texture)
         SDL_DestroyTexture(vid_texture);
@@ -574,8 +535,6 @@ int main(int argc, char *argv[])
 
     av_packet_free(&packet);
     av_frame_free(&frame);
-
-    fclose(yuv_file);
 
     LOG_DEBUG(DEBUG_PLAYER | DBG_STATE, "程序结束\n");
 
