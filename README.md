@@ -2,7 +2,8 @@
 
 ## 2019-2-15
 音视频同时播放，暂未进行音视频同步
-sdl2声音播放原理见雷神:https://blog.csdn.net/leixiaohua1020/article/details/40544521
+sdl2声音播放原理见雷神:  
+https://blog.csdn.net/leixiaohua1020/article/details/40544521
 
 ## 2019-2-13
 简单视频播放器（直接解码sdl渲染播放）  
